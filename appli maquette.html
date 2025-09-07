@@ -1,103 +1,862 @@
 <!DOCTYPE html>
 <html lang="fr">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Demande de Maquette Club</title>
+    <title>CRM Suivi Clubs</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            scroll-behavior: smooth;
         }
-
-        .step {
-            transition: all 0.3s ease;
+        summary::-webkit-details-marker {
+            display: none;
         }
-
-        .step-active {
-            border-color: #4f46e5;
-            color: #4f46e5;
-            font-weight: 600;
-        }
-
-        .step-completed {
-            border-color: #16a34a;
-            color: #16a34a;
-            background-color: #f0fdf4;
-        }
-
-        .step-line {
-            transition: all 0.3s ease;
-            background-color: #e5e7eb;
-        }
-
-        .step-line-completed {
-            background-color: #16a34a;
-        }
-
-        .color-swatch {
+        .club-list-item {
             transition: all 0.2s ease-in-out;
-            cursor: pointer;
         }
+        .club-list-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        #map {
+            height: 80vh;
+            border-radius: 1rem;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
 
-        .color-swatch:hover {
-            transform: scale(1.1);
-        }
+    <!-- Vue Liste des Clubs (Page d'accueil) -->
+    <div id="club-list-view">
+        <div class="max-w-4xl mx-auto py-10 px-4">
+            <header class="mb-10 text-center relative">
+                <h1 class="text-3xl font-bold text-gray-800">FICHE DE SUIVI CLIENT</h1>
+                <button id="show-map-button" class="absolute top-0 right-0 rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500">CARTE</button>
+                <p class="text-gray-500 mt-1">Gérez vos clubs et accédez à vos applications.</p>
+            </header>
 
-        .color-swatch.selected {
-            box-shadow: 0 0 0 3px #4f46e5;
-            transform: scale(1.1);
-        }
+            <div class="flex justify-between items-center mb-6">
+                 <div>
+                    <button id="import-button" class="rounded-md bg-gray-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-400">Importer</button>
+                    <input type="file" id="import-file-input" class="hidden" accept=".json">
+                    <button id="export-button" class="ml-2 rounded-md bg-gray-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-400">Exporter Tout</button>
+                </div>
+                <button id="add-new-club-button" class="rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">+ Nouveau Club</button>
+            </div>
+            <div id="club-list-container" class="space-y-2">
+                <!-- La liste des clubs sera injectée ici par le script -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Vue Carte -->
+    <div id="map-view" class="hidden">
+        <div class="max-w-6xl mx-auto py-10 px-4">
+             <header class="mb-6 text-center">
+                 <h1 class="text-3xl font-bold text-gray-800">Carte des Clubs</h1>
+                 <button id="back-from-map-button" class="text-sm font-semibold leading-6 text-gray-900 hover:text-gray-700 mt-2">← Retour à la liste</button>
+             </header>
+             <div id="map-loading-indicator" class="text-center p-8 text-gray-600">Chargement de la carte et des positions...</div>
+             <div id="map" class="bg-white shadow-lg border"></div>
+        </div>
+    </div>
+
+
+    <!-- Vue Fiche de Suivi (cachée par défaut) -->
+    <div id="club-form-view" class="hidden">
+        <div id="form-container" class="max-w-4xl mx-auto bg-white p-8 rounded-2xl shadow-lg my-10">
+            <header class="mb-10 text-center">
+                <h1 class="text-3xl font-bold text-gray-800">FICHE DE SUIVI CLIENT</h1>
+                 <div id="header-info" class="flex justify-center items-center space-x-4 text-lg text-gray-600 mt-2 h-7">
+                    <span id="header-club-name-display" class="font-medium text-indigo-600"></span>
+                    <span id="header-divider-1" class="text-gray-300 hidden">|</span>
+                    <span id="header-client-number-display"></span>
+                    <span id="header-divider-2" class="text-gray-300 hidden">|</span>
+                    <span id="header-department-display"></span>
+                </div>
+            </header>
+
+            <form action="#" method="POST" id="suivi-form" onsubmit="return false;">
+                <input type="hidden" id="current-club-id">
+                <div class="space-y-8">
+                    <!-- Section Informations Administratives -->
+                    <details class="border-b border-gray-200 pb-8 group" open>
+                        <summary class="list-none cursor-pointer flex justify-between items-center">
+                            <h2 class="text-xl font-semibold leading-7 text-blue-600">Informations Administratives (Mise à jour)</h2>
+                            <svg class="w-6 h-6 transition-transform transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </summary>
+                         <div id="admin-section" class="mt-6 space-y-8">
+                            <!-- Champs Nom et N° Client -->
+                            <div class="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6">
+                               <div class="sm:col-span-3"><label for="admin-club-name" class="block text-sm font-medium leading-6 text-gray-900">Nom du Club</label><div class="mt-2"><input type="text" data-field="clubName" id="admin-club-name" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                               <div class="sm:col-span-3"><label for="client-number" class="block text-sm font-medium leading-6 text-gray-900">N° Client</label><div class="mt-2"><input type="text" data-field="clientNumber" id="client-number" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                            </div>
+                            <!-- Adresse de Facturation -->
+                            <div>
+                                <h3 class="text-lg font-medium leading-6 text-gray-900">Adresse de Facturation</h3>
+                                <div class="mt-4 grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6">
+                                    <div class="sm:col-span-full"><label for="billing-contact" class="block text-sm font-medium text-gray-900">NOM Prénom</label><div class="mt-2"><input type="text" data-field="billingContact" id="billing-contact" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="sm:col-span-full"><label for="billing-address" class="block text-sm font-medium text-gray-900">Adresse</label><div class="mt-2"><input type="text" data-field="billingAddress" id="billing-address" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="sm:col-span-2"><label for="billing-postal-code" class="block text-sm font-medium text-gray-900">Code Postal</label><div class="mt-2"><input type="text" data-field="billingPostalCode" id="billing-postal-code" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="sm:col-span-4"><label for="billing-city" class="block text-sm font-medium text-gray-900">Ville</label><div class="mt-2"><input type="text" data-field="billingCity" id="billing-city" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="sm:col-span-3"><label for="billing-phone" class="block text-sm font-medium text-gray-900">Tél</label><div class="mt-2"><input type="tel" data-field="billingPhone" id="billing-phone" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="sm:col-span-3"><label for="billing-email" class="block text-sm font-medium text-gray-900">E-mail</label><div class="mt-2"><input type="email" data-field="billingEmail" id="billing-email" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                </div>
+                            </div>
+                            <!-- Adresse de Livraison -->
+                            <div>
+                                <h3 class="text-lg font-medium leading-6 text-gray-900">Adresse de Livraison (si différente)</h3>
+                                <div class="mt-4 grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6">
+                                   <div class="sm:col-span-full"><label for="shipping-contact" class="block text-sm font-medium text-gray-900">NOM Prénom</label><div class="mt-2"><input type="text" data-field="shippingContact" id="shipping-contact" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="sm:col-span-full"><label for="shipping-address" class="block text-sm font-medium text-gray-900">Adresse</label><div class="mt-2"><input type="text" data-field="shippingAddress" id="shipping-address" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="sm:col-span-2"><label for="shipping-postal-code" class="block text-sm font-medium text-gray-900">Code Postal</label><div class="mt-2"><input type="text" data-field="shippingPostalCode" id="shipping-postal-code" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="sm:col-span-4"><label for="shipping-city" class="block text-sm font-medium text-gray-900">Ville</label><div class="mt-2"><input type="text" data-field="shippingCity" id="shipping-city" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="sm:col-span-3"><label for="shipping-phone" class="block text-sm font-medium text-gray-900">Tél</label><div class="mt-2"><input type="tel" data-field="shippingPhone" id="shipping-phone" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="sm:col-span-3"><label for="shipping-email" class="block text-sm font-medium text-gray-900">E-mail</label><div class="mt-2"><input type="email" data-field="shippingEmail" id="shipping-email" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="sm:col-span-3"><label for="shipping-delivery-contact" class="block text-sm font-medium text-gray-900">Contact pour la livraison</label><div class="mt-2"><input type="text" data-field="shippingDeliveryContact" id="shipping-delivery-contact" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="sm:col-span-3"><label for="shipping-mobile" class="block text-sm font-medium text-gray-900">Tél portable</label><div class="mt-2"><input type="tel" data-field="shippingMobile" id="shipping-mobile" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                </div>
+                            </div>
+                             <!-- Contacts Clés -->
+                            <div>
+                                 <h3 class="text-lg font-medium leading-6 text-gray-900">Contacts Clés</h3>
+                                 <div class="mt-4 grid grid-cols-1 gap-6" id="key-contacts-container">
+                                    <div class="grid grid-cols-10 gap-4 items-center"><span class="col-span-2 text-sm font-medium text-gray-900">Président</span><div class="col-span-3"><input data-field="presidentName" placeholder="NOM Prénom" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div><div class="col-span-2"><input data-field="presidentPhone" placeholder="Tél" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div><div class="col-span-3"><input data-field="presidentEmail" placeholder="E-mail" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="grid grid-cols-10 gap-4 items-center"><span class="col-span-2 text-sm font-medium text-gray-900">Resp. Equipements</span><div class="col-span-3"><input data-field="equipName" placeholder="NOM Prénom" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div><div class="col-span-2"><input data-field="equipPhone" placeholder="Tél" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div><div class="col-span-3"><input data-field="equipEmail" placeholder="E-mail" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                    <div class="grid grid-cols-10 gap-4 items-center"><span class="col-span-2 text-sm font-medium text-gray-900">Trésorier</span><div class="col-span-3"><input data-field="treasurerName" placeholder="NOM Prénom" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div><div class="col-span-2"><input data-field="treasurerPhone" placeholder="Tél" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div><div class="col-span-3"><input data-field="treasurerEmail" placeholder="E-mail" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                                 </div>
+                            </div>
+                            <!-- Fabricant actuel -->
+                            <div>
+                                 <label for="current-manufacturer" class="block text-sm font-medium leading-6 text-gray-900">Fabricant textile actuel</label>
+                                <div class="mt-2">
+                                    <input type="text" data-field="currentManufacturer" id="current-manufacturer" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300">
+                                </div>
+                            </div>
+                            <!-- Dossier Club -->
+                            <div>
+                                 <h3 class="text-lg font-medium leading-6 text-gray-900">Dossier Club</h3>
+                                 <div class="mt-4">
+                                     <label for="folder-link" class="block text-sm font-medium leading-6 text-gray-900">Lien vers le dossier du club (Drive, Dropbox...)</label>
+                                     <div class="mt-2">
+                                        <input type="url" data-field="folderLink" id="folder-link" placeholder="https://..." class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300">
+                                     </div>
+                                 </div>
+                            </div>
+                             <!-- Applications du Club -->
+                             <div>
+                                <h3 class="text-lg font-medium leading-6 text-gray-900">Mes Applications</h3>
+                                <div id="app-links-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 my-4">
+                                    <!-- App links for the club will be rendered here -->
+                                </div>
+                                <div class="bg-gray-50 p-4 rounded-lg border">
+                                    <h4 class="font-semibold mb-2 text-sm">Ajouter une application à ce club</h4>
+                                    <div class="flex flex-col sm:flex-row items-center gap-4">
+                                        <input type="text" id="app-name-input" placeholder="Nom de l'app" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300">
+                                        <input type="url" id="app-url-input" placeholder="URL (https://...)" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300">
+                                        <button id="add-app-button" class="w-full sm:w-auto rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500">Ajouter</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-8 flex justify-end">
+                               <button type="button" id="send-update-button" class="rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500">Envoyer pour mise à jour</button>
+                            </div>
+                        </div>
+                    </details>
+
+                    <!-- Section Sélection Gamme -->
+                     <details class="border-b border-gray-200 pb-8 group">
+                        <summary class="list-none cursor-pointer flex justify-between items-center">
+                            <h2 class="text-xl font-semibold leading-7 text-green-600">Sélection de la Gamme</h2>
+                            <svg class="w-6 h-6 transition-transform transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </summary>
+                        <div id="gamme-section" class="mt-6">
+                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-6">
+                                <!-- Col 1 -->
+                                <div class="space-y-6">
+                                    <div>
+                                        <h3 class="font-semibold text-gray-900 border-b pb-1 mb-2">1. Maillots MC & ML</h3>
+                                        <div class="space-y-2 text-sm">
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="maillot_mc_classique" id="gamme_maillot_mc_classique" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_maillot_mc_classique" class="text-gray-800">(MC) CLASSIQUE CONFORT H/F</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="maillot_mc_perf_sansmanche" id="gamme_maillot_mc_perf_sansmanche" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_maillot_mc_perf_sansmanche" class="text-gray-800">(MC) MIXTE PERFORMANCE CONFORT Sans manches</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="maillot_mc_perf_ajuste" id="gamme_maillot_mc_perf_ajuste" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_maillot_mc_perf_ajuste" class="text-gray-800">(MC) MIXTE PERFORMANCE CONFORT (Coupe ajustée)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="maillot_mc_vtt" id="gamme_maillot_mc_vtt" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_maillot_mc_vtt" class="text-gray-800">(MC) MIXTE VTT CONFORT (Tissu plus résistant)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="maillot_mc_descente" id="gamme_maillot_mc_descente" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_maillot_mc_descente" class="text-gray-800">(MC) DESCENTE MIXTE CONFORT (Très ample)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="maillot_mc_aero" id="gamme_maillot_mc_aero" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_maillot_mc_aero" class="text-gray-800">(MC) MIXTE AERO (très fitté)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="maillot_ml_misaison" id="gamme_maillot_ml_misaison" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_maillot_ml_misaison" class="text-gray-800">(ML) MI-SAISON CONFORT</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="maillot_ml_bmx" id="gamme_maillot_ml_bmx" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_maillot_ml_bmx" class="text-gray-800">(ML) BMX MIXTE CONFORT (Très ample)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="maillot_ml_aero" id="gamme_maillot_ml_aero" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_maillot_ml_aero" class="text-gray-800">(ML) MI-SAISON MIXTE AERO (très fitté)</label></div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-semibold text-gray-900 border-b pb-1 mb-2">III. Cuissards & Shorts VTT</h3>
+                                        <div class="space-y-2 text-sm">
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="cuissard_bretelles" id="gamme_cuissard_bretelles" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_cuissard_bretelles" class="text-gray-800">CUISSARD A BRETELLES CONFORT - Peau LANDSCAPE</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="cuissard_sansbretelles" id="gamme_cuissard_sansbretelles" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_cuissard_sansbretelles" class="text-gray-800">CUISSARD SANS BRETELLES CONFORT - Peau LANDSCAPE (Femme)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="cuissard_aero" id="gamme_cuissard_aero" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_cuissard_aero" class="text-gray-800">CUISSARD AERO - Peau CERVINO (Homme)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="short_vtt" id="gamme_short_vtt" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_short_vtt" class="text-gray-800">SHORT VTT FOND - Peau ENDURANCE 2.5</label></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Col 2 -->
+                                <div class="space-y-6">
+                                     <div>
+                                        <h3 class="font-semibold text-gray-900 border-b pb-1 mb-2">II. Essentiels & Vestes</h3>
+                                        <div class="space-y-2 text-sm">
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_pluie_mc" id="gamme_veste_pluie_mc" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_pluie_mc" class="text-gray-800">MAILLOT PLUIE MIXTE AERO MC (non sublimé, DTF)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_pluie_ml" id="gamme_veste_pluie_ml" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_pluie_ml" class="text-gray-800">MAILLOT PLUIE MIXTE AERO ML (non sublimé, DTF)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_gilet_leger" id="gamme_veste_gilet_leger" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_gilet_leger" class="text-gray-800">GILET COUPE-VENT LEGER MIXTE (sans poche dos)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_gilet_misaison" id="gamme_veste_gilet_misaison" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_gilet_misaison" class="text-gray-800">GILET COUPE-VENT MI-SAISON MIXTE (dos ajouré)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_gilet_hiver" id="gamme_veste_gilet_hiver" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_gilet_hiver" class="text-gray-800">GILET COUPE-VENT HIVER MIXTE (tout membranné)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_coupevent_leger" id="gamme_veste_coupevent_leger" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_coupevent_leger" class="text-gray-800">COUPE-VENT LEGER MIXTE CONFORT (vent et pluie fine)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_coupevent_deperlant" id="gamme_veste_coupevent_deperlant" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_coupevent_deperlant" class="text-gray-800">COUPE-VENT LEGER DEPERLANT MIXTE (avec membrane)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_misaison" id="gamme_veste_misaison" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_misaison" class="text-gray-800">VESTE MI-SAISON MIXTE CONFORT</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_misaison_6cm" id="gamme_veste_misaison_6cm" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_misaison_6cm" class="text-gray-800">VESTE MI-SAISON MIXTE CONFORT-6cm aux ML</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_hiver_aero" id="gamme_veste_hiver_aero" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_hiver_aero" class="text-gray-800">VESTE HIVER MIXTE AERO (très fittée)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_hiver_homme" id="gamme_veste_hiver_homme" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_hiver_homme" class="text-gray-800">VESTE HIVER HOMME CONFORT (polaire et mi-saison)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_hiver_femme" id="gamme_veste_hiver_femme" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_hiver_femme" class="text-gray-800">VESTE HIVER FEMME CONFORT (polaire et mi-saison)</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_thermique_homme" id="gamme_veste_thermique_homme" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_thermique_homme" class="text-gray-800">VESTE HIVER THERMIQUE HOMME CONFORT</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="veste_thermique_femme" id="gamme_veste_thermique_femme" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_veste_thermique_femme" class="text-gray-800">VESTE HIVER THERMIQUE FEMME CONFORT</label></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <!-- Col 3 -->
+                                <div class="space-y-6">
+                                     <div>
+                                        <h3 class="font-semibold text-gray-900 border-b pb-1 mb-2">V. Enfants</h3>
+                                        <div class="space-y-2 text-sm">
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="enfant_maillot_mc" id="gamme_enfant_maillot_mc" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_enfant_maillot_mc" class="text-gray-800">MAILLOT ENFANT PERFORMANCE MC</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="enfant_maillot_bmx" id="gamme_enfant_maillot_bmx" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_enfant_maillot_bmx" class="text-gray-800">MAILLOT BMX ENFANT CONFORT ML</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="enfant_maillot_misaison" id="gamme_enfant_maillot_misaison" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_enfant_maillot_misaison" class="text-gray-800">MAILLOT MI-SAISON ENFANT CONFORT ML</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="enfant_gilet" id="gamme_enfant_gilet" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_enfant_gilet" class="text-gray-800">GILET COUPE-VENT LEGER ENFANT</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="enfant_veste" id="gamme_enfant_veste" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_enfant_veste" class="text-gray-800">VESTE HIVER ENFANT CONFORT</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="enfant_cuissard" id="gamme_enfant_cuissard" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_enfant_cuissard" class="text-gray-800">CUISSARD ENFANT CONFORT</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="enfant_collant_sublime" id="gamme_enfant_collant_sublime" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_enfant_collant_sublime" class="text-gray-800">COLLANT HIVER ENFANT SUBLIME CONFORT</label></div>
+                                            <div class="flex items-start gap-x-2"><input type="checkbox" data-gamme-id="enfant_collant_velours" id="gamme_enfant_collant_velours" class="mt-1 h-4 w-4 rounded border-gray-300"><label for="gamme_enfant_collant_velours" class="text-gray-800">COLLANT ENFANT VELOURS ECHAUFFEMENT</label></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </details>
+
+
+                    <!-- Container for appointments -->
+                    <div id="appointments-container" class="space-y-8"></div>
+                </div>
+
+                <div class="mt-10 flex items-center justify-between no-print">
+                    <div>
+                        <button type="button" id="back-to-list-button" class="text-sm font-semibold leading-6 text-gray-900 hover:text-gray-700">← Retour à la liste</button>
+                        <button type="button" id="add-appointment-button" class="ml-4 rounded-md bg-gray-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-500">+ Ajouter un rendez-vous</button>
+                    </div>
+                    <div class="flex items-center gap-x-6">
+                         <button type="button" id="save-club-button" class="rounded-md bg-green-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-500">Enregistrer le Club</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Template for a single appointment -->
+    <template id="appointment-template">
+         <details class="appointment-block border-b border-gray-200 pb-8 group" open>
+            <summary class="list-none cursor-pointer flex justify-between items-center">
+                <h2 class="appointment-title text-xl font-semibold leading-7 text-purple-600">NOUVEAU RENDEZ-VOUS</h2>
+                <svg class="w-6 h-6 transition-transform transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </summary>
+            <div class="appointment-content mt-6 space-y-8 pl-4 border-l-2 border-gray-200">
+                <input type="hidden" data-appt-field="id">
+                <!-- Section Informations Clés -->
+                <div class="pb-8">
+                    <h3 class="text-lg font-semibold leading-7 text-gray-900 mb-6">Informations Clés</h3>
+                    <div class="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-6">
+                        <div class="sm:col-span-3"><label class="block text-sm font-medium leading-6 text-gray-900">Date du rendez-vous</label><div class="mt-2"><input type="date" data-appt-field="date" class="appointment-date-input block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                        <div class="sm:col-span-3"><label class="block text-sm font-medium leading-6 text-gray-900">Contact Principal</label><div class="mt-2"><input type="text" data-appt-field="contact" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                        <div class="sm:col-span-full"><label class="block text-sm font-medium leading-6 text-gray-900">Participants</label><div class="mt-2"><input type="text" data-appt-field="participants" placeholder="Noms et fonctions" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300"></div></div>
+                    </div>
+                </div>
+                 <!-- Section Bilan & Situation Actuelle -->
+                <div class="pb-8">
+                    <h3 class="text-lg font-semibold leading-7 text-gray-900 mb-6">Bilan & Situation Actuelle</h3>
+                     <div class="grid grid-cols-1 gap-x-6 gap-y-8 sm:grid-cols-2">
+                        <div>
+                            <label class="block text-sm font-medium leading-6 text-gray-900">Niveau de satisfaction global</label>
+                            <fieldset class="mt-2"><div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+                                <div class="flex items-center gap-x-2"><input data-appt-field="satisfaction" value="excellent" type="radio"><label class="text-sm text-gray-900">Excellent</label></div>
+                                <div class="flex items-center gap-x-2"><input data-appt-field="satisfaction" value="bon" type="radio"><label class="text-sm text-gray-900">Bon</label></div>
+                                <div class="flex items-center gap-x-2"><input data-appt-field="satisfaction" value="moyen" type="radio"><label class="text-sm text-gray-900">Moyen</label></div>
+                                <div class="flex items-center gap-x-2"><input data-appt-field="satisfaction" value="insuffisant" type="radio"><label class="text-sm text-gray-900">Insuffisant</label></div>
+                            </div></fieldset>
+                        </div>
+                        <div class="sm:col-span-full">
+                             <label class="block text-sm font-medium leading-6 text-gray-900">Dernier projet / commande</label>
+                            <div class="mt-2"><textarea data-appt-field="lastProject" rows="2" class="block w-full rounded-md border-0 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300" placeholder="Ex: Maillots saison 2024, 50 pièces, livré en Mars..."></textarea></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </details>
+    </template>
+    
+    <script id="main-script">
+    document.addEventListener('DOMContentLoaded', function () {
+        const clubListView = document.getElementById('club-list-view');
+        const clubFormView = document.getElementById('club-form-view');
+        const mapView = document.getElementById('map-view');
+        const showMapButton = document.getElementById('show-map-button');
+        const backFromMapButton = document.getElementById('back-from-map-button');
+        const mapContainer = document.getElementById('map');
+        const mapLoadingIndicator = document.getElementById('map-loading-indicator');
+        const addNewClubButton = document.getElementById('add-new-club-button');
+        const backToListButton = document.getElementById('back-to-list-button');
+        const clubListContainer = document.getElementById('club-list-container');
+        const currentClubIdInput = document.getElementById('current-club-id');
+        const saveClubButton = document.getElementById('save-club-button');
+        const addAppointmentButton = document.getElementById('add-appointment-button');
+        const appointmentsContainer = document.getElementById('appointments-container');
+        const appointmentTemplate = document.getElementById('appointment-template');
+        const importButton = document.getElementById('import-button');
+        const importFileInput = document.getElementById('import-file-input');
+        const exportButton = document.getElementById('export-button');
+        const sendUpdateButton = document.getElementById('send-update-button');
         
-        .modal { 
-            display: none; 
-            transition: opacity 0.3s ease;
-        }
-        .modal.is-open { 
-            display: flex; 
-        }
+        // App elements are now inside the form view
+        const appLinksContainer = document.querySelector('#club-form-view #app-links-container');
+        const addAppButton = document.querySelector('#club-form-view #add-app-button');
+        const appNameInput = document.querySelector('#club-form-view #app-name-input');
+        const appUrlInput = document.querySelector('#club-form-view #app-url-input');
 
-        [data-step-content] {
-            display: none;
-        }
+        const DB_KEY = 'crmClubsData';
+        let map = null;
 
-        [data-step-content].active {
-            display: block;
-            animation: fadeIn 0.5s;
-        }
+        // --- DATA FUNCTIONS ---
+        const getClubs = () => JSON.parse(localStorage.getItem(DB_KEY)) || {};
+        const saveClubs = (clubs) => localStorage.setItem(DB_KEY, JSON.stringify(clubs));
+
+        // --- VIEW FUNCTIONS ---
+        const showListView = () => {
+            renderClubList();
+            clubListView.classList.remove('hidden');
+            clubFormView.classList.add('hidden');
+            mapView.classList.add('hidden');
+        };
         
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
+        const showFormView = () => {
+            clubListView.classList.add('hidden');
+            clubFormView.classList.remove('hidden');
+            mapView.classList.add('hidden');
+        };
+
+        const showMapView = async () => {
+            clubListView.classList.add('hidden');
+            clubFormView.classList.add('hidden');
+            mapView.classList.remove('hidden');
+            mapContainer.classList.add('hidden');
+            mapLoadingIndicator.classList.remove('hidden');
+
+            if (!map) {
+                map = L.map('map').setView([46.603354, 1.888334], 6); // Center on France
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
+            }
+             // Clear existing markers
+            map.eachLayer((layer) => {
+                if (layer instanceof L.Marker) {
+                    map.removeLayer(layer);
+                }
+            });
+
+            await plotClubsOnMap();
+            mapContainer.classList.remove('hidden');
+            mapLoadingIndicator.classList.add('hidden');
+            setTimeout(() => map.invalidateSize(), 100); // Recalculate map size
+        };
+        
+        // --- MAP LOGIC ---
+        const plotClubsOnMap = async () => {
+            const clubs = getClubs();
+            let dataWasUpdated = false;
+            let clubsPlotted = 0;
+            const clubsToGeocode = Object.values(clubs).filter(club => club.adminData.billingAddress && club.adminData.billingPostalCode && club.adminData.billingCity);
+            const totalClubs = clubsToGeocode.length;
+
+            mapLoadingIndicator.textContent = `Géolocalisation de ${totalClubs} club(s)...`;
+
+            for (const club of Object.values(clubs)) {
+                if (club.adminData.lat && club.adminData.lon) {
+                    L.marker([club.adminData.lat, club.adminData.lon]).addTo(map)
+                        .bindPopup(`<b>${club.adminData.clubName || 'Club sans nom'}</b>`);
+                    clubsPlotted++;
+                    continue; 
+                }
+
+                const { billingAddress, billingPostalCode, billingCity } = club.adminData;
+                if (billingAddress && billingPostalCode && billingCity) {
+                    const query = encodeURIComponent(`${billingAddress}, ${billingPostalCode} ${billingCity}`);
+                    try {
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                        
+                        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${query}&limit=1`);
+                        if (!response.ok) continue;
+                        const data = await response.json();
+
+                        if (data && data.length > 0) {
+                            const { lat, lon } = data[0];
+                            L.marker([lat, lon]).addTo(map)
+                                .bindPopup(`<b>${club.adminData.clubName || 'Club sans nom'}</b>`);
+                            clubsPlotted++;
+                            
+                            club.adminData.lat = lat;
+                            club.adminData.lon = lon;
+                            dataWasUpdated = true;
+                        }
+                    } catch (error) {
+                        console.error("Geocoding error for club:", club.adminData.clubName, error);
+                    }
+                }
+            }
+
+            if (dataWasUpdated) {
+                saveClubs(clubs);
+            }
+            
+            mapLoadingIndicator.textContent = `${clubsPlotted} sur ${totalClubs} club(s) avec une adresse valide ont pu être localisés.`;
+        };
+
+
+        // --- RENDER FUNCTIONS ---
+        const renderClubAppList = (apps = []) => {
+            appLinksContainer.innerHTML = '';
+            apps.forEach((app, index) => {
+                const appLinkEl = document.createElement('div');
+                appLinkEl.className = 'relative group';
+                appLinkEl.innerHTML = `
+                    <a href="${app.url}" target="_blank" rel="noopener noreferrer" class="block text-center bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:border-indigo-500 hover:shadow-md transition-all h-full flex items-center justify-center">
+                        <span class="font-semibold text-indigo-700">${app.name}</span>
+                    </a>
+                    <button data-index="${index}" class="delete-app-btn absolute -top-2 -right-2 bg-red-500 text-white rounded-full h-6 w-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-sm leading-none">&times;</button>
+                `;
+                appLinksContainer.appendChild(appLinkEl);
+            });
+        };
+        
+        const renderClubList = () => {
+            clubListContainer.innerHTML = '';
+            const clubs = getClubs();
+
+            if (Object.keys(clubs).length === 0) {
+                clubListContainer.innerHTML = `<p class="text-center text-gray-500">Aucun club enregistré. Cliquez sur "+ Nouveau Club" pour commencer.</p>`;
+                return;
+            }
+
+            const groupedByDept = Object.values(clubs).reduce((acc, club) => {
+                const postalCode = club.adminData.billingPostalCode || '';
+                const dept = postalCode.length >= 2 ? postalCode.substring(0, 2) : 'Sans département';
+                if (!acc[dept]) acc[dept] = [];
+                acc[dept].push(club);
+                return acc;
+            }, {});
+
+            const sortedDepts = Object.keys(groupedByDept).sort((a, b) => {
+                if (a === 'Sans département') return 1;
+                if (b === 'Sans département') return -1;
+                return a.localeCompare(b, undefined, { numeric: true });
+            });
+
+            sortedDepts.forEach(dept => {
+                const detailsElement = document.createElement('details');
+                detailsElement.className = 'bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden';
+                const summaryElement = document.createElement('summary');
+                summaryElement.className = 'list-none cursor-pointer p-4 flex justify-between items-center hover:bg-gray-50';
+                const deptTitle = (dept === 'Sans département') ? 'Sans département' : `Département ${dept}`;
+                summaryElement.innerHTML = `
+                    <h2 class="text-xl font-semibold text-gray-700">${deptTitle}</h2>
+                    <svg class="w-6 h-6 transition-transform transform details-arrow" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                `;
+                const clubListDiv = document.createElement('div');
+                clubListDiv.className = 'p-4 border-t border-gray-200 space-y-2';
+                const clubsInDept = groupedByDept[dept].sort((a, b) => (a.adminData.clubName || '').localeCompare(b.adminData.clubName || ''));
+                clubsInDept.forEach(club => {
+                    const clubCard = document.createElement('div');
+                    clubCard.className = 'club-list-item bg-gray-50 hover:bg-indigo-100 p-3 rounded-md cursor-pointer transition-all';
+                    clubCard.dataset.clubId = club.id;
+                    clubCard.innerHTML = `
+                        <h3 class="font-bold text-lg text-indigo-700">${club.adminData.clubName || 'Club sans nom'}</h3>
+                        <p class="text-sm text-gray-600">N° ${club.adminData.clientNumber || 'N/A'}</p>
+                    `;
+                    clubCard.addEventListener('click', () => loadClub(club.id));
+                    clubListDiv.appendChild(clubCard);
+                });
+                detailsElement.appendChild(summaryElement);
+                detailsElement.appendChild(clubListDiv);
+                clubListContainer.appendChild(detailsElement);
+            });
+        };
+
+        // --- FORM LOGIC ---
+        const createNewClub = () => {
+            resetForm();
+            currentClubIdInput.value = `club_${Date.now()}`;
+            document.getElementById('admin-club-name').focus();
+            showFormView();
+        };
+        
+        const resetForm = () => {
+            document.getElementById('suivi-form').reset();
+            appointmentsContainer.innerHTML = '';
+            renderClubAppList([]); // Clear app list
+            currentClubIdInput.value = '';
+            document.getElementById('header-club-name-display').textContent = '';
+            document.getElementById('header-client-number-display').textContent = '';
+            document.getElementById('header-department-display').textContent = '';
+            document.getElementById('header-divider-1').classList.add('hidden');
+            document.getElementById('header-divider-2').classList.add('hidden');
+        };
+
+        const loadClub = (clubId) => {
+            resetForm();
+            const clubs = getClubs();
+            const club = clubs[clubId];
+            if (!club) return;
+
+            currentClubIdInput.value = club.id;
+
+            if (club.adminData) {
+                document.querySelectorAll('#admin-section [data-field]').forEach(input => {
+                    const key = input.dataset.field;
+                    if (typeof club.adminData[key] !== 'undefined') input.value = club.adminData[key];
+                });
+            }
+            if (club.gammeData) {
+                document.querySelectorAll('#gamme-section [data-gamme-id]').forEach(checkbox => {
+                    const key = checkbox.dataset.gammeId;
+                    if (club.gammeData[key]) checkbox.checked = true;
+                });
+            }
+            if (club.appointments) {
+                club.appointments.forEach(apptData => {
+                    const apptElement = createAppointmentElement(apptData);
+                    appointmentsContainer.appendChild(apptElement);
+                });
+            }
+            
+            renderClubAppList(club.apps || []); // Load apps
+            
+            document.getElementById('admin-club-name').dispatchEvent(new Event('input'));
+            document.getElementById('client-number').dispatchEvent(new Event('input'));
+            document.getElementById('billing-postal-code').dispatchEvent(new Event('input'));
+            
+            showFormView();
+        };
+
+        const saveCurrentClub = () => {
+            const clubId = currentClubIdInput.value;
+            if (!clubId) return;
+
+            const clubs = getClubs();
+            
+            const adminData = {};
+            document.querySelectorAll('#admin-section [data-field]').forEach(input => {
+                adminData[input.dataset.field] = input.value;
+            });
+
+            const gammeData = {};
+            document.querySelectorAll('#gamme-section [data-gamme-id]').forEach(checkbox => {
+                gammeData[checkbox.dataset.gammeId] = checkbox.checked;
+            });
+            
+            const appointmentsData = [];
+            document.querySelectorAll('.appointment-block').forEach(apptElement => {
+                const apptData = {};
+                apptElement.querySelectorAll('[data-appt-field]').forEach(input => {
+                    const key = input.dataset.apptField;
+                    if (input.type === 'radio') {
+                        if (input.checked) apptData[key] = input.value;
+                    } else if (input.type === 'checkbox') {
+                         apptData[key] = input.checked;
+                    } else {
+                        apptData[key] = input.value;
+                    }
+                });
+                appointmentsData.push(apptData);
+            });
+            
+            // Collect app data from the DOM
+            const appsData = [];
+            document.querySelectorAll('#app-links-container a').forEach(linkEl => {
+                appsData.push({
+                    name: linkEl.querySelector('span').textContent,
+                    url: linkEl.href
+                });
+            });
+
+            const currentClubData = clubs[clubId] || { id: clubId };
+            const clubToSave = {
+                ...currentClubData,
+                id: clubId,
+                adminData,
+                gammeData,
+                appointments: appointmentsData,
+                apps: appsData, // Save apps with the club
+            };
+
+            clubs[clubId] = clubToSave;
+            saveClubs(clubs);
+            alert('Club enregistré !');
+            showListView();
+        };
+
+        const createAppointmentElement = (data = {}) => {
+            const fragment = appointmentTemplate.content.cloneNode(true);
+            const detailsElement = fragment.querySelector('.appointment-block');
+            const titleElement = detailsElement.querySelector('.appointment-title');
+            const dateInput = detailsElement.querySelector('.appointment-date-input');
+
+            detailsElement.querySelectorAll('[data-appt-field]').forEach(input => {
+                const key = input.dataset.apptField;
+                if (data[key]) {
+                     if (input.type === 'radio') {
+                        if (input.value === data[key]) input.checked = true;
+                    } else if (input.type === 'checkbox') {
+                         input.checked = data[key];
+                    } else {
+                        input.value = data[key];
+                    }
+                }
+            });
+
+            if (!data.id) data.id = `appt_${Date.now()}`;
+            detailsElement.querySelector('[data-appt-field="id"]').value = data.id;
+
+            if (data.date) {
+                const date = new Date(data.date);
+                const formattedDate = date.toLocaleDateString('fr-FR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' });
+                titleElement.textContent = `RENDEZ-VOUS DU ${formattedDate}`;
+                detailsElement.removeAttribute('open');
+            }
+             dateInput.addEventListener('change', () => {
+                if (dateInput.value) {
+                    const date = new Date(dateInput.value);
+                    const formattedDate = date.toLocaleDateString('fr-FR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' });
+                    titleElement.textContent = `RENDEZ-VOUS DU ${formattedDate}`;
+                } else {
+                    titleElement.textContent = `NOUVEAU RENDEZ-VOUS`;
+                }
+            });
+
+            return fragment;
+        };
+
+        const sendUpdateEmail = () => {
+            const clubName = document.getElementById('admin-club-name').value.trim() || 'N/A';
+            const subject = `Mise à jour Fiche Client : ${clubName}`;
+            let body = "Bonjour Aude,\n\nVoici une demande de mise à jour pour un dossier client :\n\n";
+            const addField = (label, value) => `${label}: ${value || 'Non renseigné'}\n`;
+            
+            const adminData = {};
+            document.querySelectorAll('#admin-section [data-field]').forEach(input => {
+                if (input.dataset.field !== 'folderLink') { // Exclude folder link
+                    adminData[input.dataset.field] = input.value;
+                }
+            });
+            
+            body += "--- INFORMATIONS GÉNÉRALES ---\n";
+            body += addField("Nom du Club", adminData.clubName);
+            body += addField("N° Client", adminData.clientNumber);
+            body += "\n--- ADRESSE DE FACTURATION ---\n";
+            body += addField("Contact", adminData.billingContact);
+            body += addField("Adresse", adminData.billingAddress);
+            body += addField("Code Postal", adminData.billingPostalCode);
+            body += addField("Ville", adminData.billingCity);
+            body += addField("Téléphone", adminData.billingPhone);
+            body += addField("Email", adminData.billingEmail);
+            body += "\n--- ADRESSE DE LIVRAISON ---\n";
+            body += addField("Contact", adminData.shippingContact);
+            body += addField("Adresse", adminData.shippingAddress);
+            body += addField("Code Postal", adminData.shippingPostalCode);
+            body += addField("Ville", adminData.shippingCity);
+            body += addField("Téléphone", adminData.shippingPhone);
+            body += addField("Email", adminData.shippingEmail);
+            body += addField("Contact pour livraison", adminData.shippingDeliveryContact);
+            body += addField("Tél portable", adminData.shippingMobile);
+            body += "\n--- CONTACTS CLÉS ---\n";
+            body += addField("Président", adminData.presidentName);
+            body += addField("Tél. Président", adminData.presidentPhone);
+            body += addField("Email Président", adminData.presidentEmail);
+            body += addField("Resp. Équipements", adminData.equipName);
+            body += addField("Tél. Resp. Équipements", adminData.equipPhone);
+            body += addField("Email Resp. Équipements", adminData.equipEmail);
+            body += addField("Trésorier", adminData.treasurerName);
+            body += addField("Tél. Trésorier", adminData.treasurerPhone);
+            body += addField("Email Trésorier", adminData.treasurerEmail);
+            body += "\n--- AUTRES INFORMATIONS ---\n";
+            body += addField("Fabricant textile actuel", adminData.currentManufacturer);
+            
+            const mailtoLink = `mailto:aude@noret.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+            window.location.href = mailtoLink;
+        };
+
+
+        // --- IMPORT/EXPORT/APPS LOGIC ---
+        const exportData = () => {
+            const clubs = getClubs();
+            if (Object.keys(clubs).length === 0) {
+                alert("Aucune donnée à exporter.");
+                return;
+            }
+            const dataStr = JSON.stringify(clubs, null, 2);
+            const dataBlob = new Blob([dataStr], {type: "application/json"});
+            const url = URL.createObjectURL(dataBlob);
+            const link = document.createElement('a');
+            const today = new Date().toISOString().slice(0, 10);
+            link.download = `sauvegarde_crm_clubs_${today}.json`;
+            link.href = url;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        };
+
+        const handleImport = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const importedClubs = JSON.parse(e.target.result);
+                    if (typeof importedClubs !== 'object' || importedClubs === null || Array.isArray(importedClubs)) {
+                       throw new Error("Format de fichier invalide.");
+                    }
+                    if (confirm("Voulez-vous vraiment importer ces données ? Cela écrasera toutes les données existantes.")) {
+                        saveClubs(importedClubs);
+                        renderClubList();
+                        alert("Importation réussie !");
+                    }
+                } catch (error) {
+                    alert(`Erreur lors de l'importation du fichier : ${error.message}`);
+                } finally {
+                    importFileInput.value = '';
+                }
+            };
+            reader.readAsText(file);
+        };
+        
+        const addAppToCurrentClub = () => {
+            const name = appNameInput.value.trim();
+            const url = appUrlInput.value.trim();
+
+            if (!name || !url) {
+                alert("Veuillez renseigner un nom et une URL.");
+                return;
+            }
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                alert("L'URL doit commencer par http:// ou https://");
+                return;
+            }
+            
+            // Add to the DOM for immediate feedback
+            const appLinkEl = document.createElement('div');
+            appLinkEl.className = 'relative group';
+            // We need to determine the next index for the delete button
+            const nextIndex = appLinksContainer.children.length;
+            appLinkEl.innerHTML = `
+                <a href="${url}" target="_blank" rel="noopener noreferrer" class="block text-center bg-white p-4 rounded-lg shadow-sm border border-gray-200 hover:border-indigo-500 hover:shadow-md transition-all h-full flex items-center justify-center">
+                    <span class="font-semibold text-indigo-700">${name}</span>
+                </a>
+                <button data-index="${nextIndex}" class="delete-app-btn absolute -top-2 -right-2 bg-red-500 text-white rounded-full h-6 w-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-sm leading-none">&times;</button>
+            `;
+            appLinksContainer.appendChild(appLinkEl);
+            
+            appNameInput.value = '';
+            appUrlInput.value = '';
+        };
+
+        const deleteAppFromCurrentClub = (index) => {
+            if (!confirm("Voulez-vous vraiment supprimer ce lien ?")) return;
+            // Rebuild the list in the DOM without the deleted item
+            const currentApps = [];
+            appLinksContainer.querySelectorAll('a').forEach(linkEl => {
+                currentApps.push({
+                    name: linkEl.querySelector('span').textContent,
+                    url: linkEl.href
+                });
+            });
+            currentApps.splice(index, 1);
+            renderClubAppList(currentApps);
+        };
+
+
+        // --- EVENT LISTENERS ---
+        addNewClubButton.addEventListener('click', createNewClub);
+        backToListButton.addEventListener('click', showListView);
+        saveClubButton.addEventListener('click', saveCurrentClub);
+        exportButton.addEventListener('click', exportData);
+        importButton.addEventListener('click', () => importFileInput.click());
+        importFileInput.addEventListener('change', handleImport);
+        sendUpdateButton.addEventListener('click', sendUpdateEmail);
+        showMapButton.addEventListener('click', showMapView);
+        backFromMapButton.addEventListener('click', showListView);
+        addAppButton.addEventListener('click', addAppToCurrentClub);
+        
+        appLinksContainer.addEventListener('click', (e) => {
+            if (e.target.classList.contains('delete-app-btn')) {
+                const index = parseInt(e.target.dataset.index, 10);
+                deleteAppFromCurrentClub(index);
+            }
+        });
+
+        addAppointmentButton.addEventListener('click', () => {
+            document.querySelectorAll('#appointments-container .appointment-block').forEach(el => el.removeAttribute('open'));
+            const newAppointment = createAppointmentElement();
+            appointmentsContainer.appendChild(newAppointment);
+        });
+        
+        // Header Auto-Update Logic
+        const adminClubNameInput = document.getElementById('admin-club-name');
+        const clientNumberInput = document.getElementById('client-number');
+        const billingPostalCodeInput = document.getElementById('billing-postal-code');
+        const headerClubNameDisplay = document.getElementById('header-club-name-display');
+        const headerClientNumberDisplay = document.getElementById('header-client-number-display');
+        const headerDepartmentDisplay = document.getElementById('header-department-display');
+        const divider1 = document.getElementById('header-divider-1');
+        const divider2 = document.getElementById('header-divider-2');
+
+        function updateDividers() {
+            const hasClub = !!headerClubNameDisplay.textContent;
+            const hasClient = !!headerClientNumberDisplay.textContent;
+            const hasDept = !!headerDepartmentDisplay.textContent;
+            divider1.classList.toggle('hidden', !(hasClub && (hasClient || hasDept)));
+            divider2.classList.toggle('hidden', !(hasClient && hasDept && hasClub));
         }
 
-        .style-label input:checked + span {
-            border-color: #4f46e5;
-            background-color: #eef2ff;
-        }
+        adminClubNameInput.addEventListener('input', () => {
+            headerClubNameDisplay.textContent = adminClubNameInput.value;
+            updateDividers();
+        });
+        clientNumberInput.addEventListener('input', () => {
+            headerClientNumberDisplay.textContent = clientNumberInput.value ? `N° ${clientNumberInput.value}` : '';
+            updateDividers();
+        });
+        billingPostalCodeInput.addEventListener('input', () => {
+            const postalCode = billingPostalCodeInput.value;
+            headerDepartmentDisplay.textContent = (postalCode && postalCode.length >= 2) ? `Dép. ${postalCode.substring(0, 2)}` : '';
+            updateDividers();
+        });
 
-        details > summary {
-            list-style: none;
-        }
-        details > summary::-webkit-details-marker {
-            display: none;
-        }
-
-        .loader {
-            border: 4px solid #f3f3f3;
-            border-radius: 50%;
-            border-top: 4px solid #4f46e5;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-        }
+        // --- INITIALIZATION ---
+        showListView();
+    });
+    </script>
+</body>
+</html>
 
         @keyframes spin {
             0% { transform: rotate(0deg); }
@@ -1680,4 +2439,5 @@ N° Client : ${state.clubInfo.clientNumber}
 </body>
 
 </html>
+
 
